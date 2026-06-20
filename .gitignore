@@ -1,0 +1,19 @@
+# Environment variables (never commit this)
+.env
+.env.local
+.env.production
+
+# Dependencies
+node_modules/
+
+# Uploaded files (store on Cloudinary, not git)
+uploads/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
