@@ -1,47 +1,37 @@
 const router = require('express').Router();
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
+const cloudinary = require('cloudinary').v2;
 const { authenticate, adminOnly } = require('../middleware/auth');
 
-// Map file type to upload folder
-const UPLOAD_DIRS = {
-  thumbnail:  'uploads/thumbnails',
-  screenshot: 'uploads/screenshots',
-  video:      'uploads/videos',
-  apk:        'uploads/apk',
-  aab:        'uploads/aab',
-  code:       'uploads/code',
-};
-
-// Dynamic storage — folder depends on req.query.type
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const type = req.query.type || 'thumbnail';
-    const dir = path.join(__dirname, '../../', UPLOAD_DIRS[type] || 'uploads/thumbnails');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
-    const ext = path.extname(file.originalname);
-    cb(null, `${unique}${ext}`);
-  },
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key:    process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// File filter — allow images + video + APK + AAB + ZIP
+// Cloudinary resource type per upload type
+const RESOURCE_TYPES = {
+  thumbnail:  'image',
+  screenshot: 'image',
+  video:      'video',
+  apk:        'raw',
+  aab:        'raw',
+  code:       'raw',
+};
+
 const fileFilter = (req, file, cb) => {
   const allowed = [
     'image/jpeg', 'image/jpg', 'image/png', 'image/webp',
     'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm',
-    'application/vnd.android.package-archive', // APK
-    'application/octet-stream',                // AAB / generic binary
+    'application/vnd.android.package-archive',
+    'application/octet-stream',
     'application/zip',
     'application/x-zip-compressed',
     'application/x-zip',
   ];
-  const ext = path.extname(file.originalname).toLowerCase();
   const allowedExts = ['.jpg', '.jpeg', '.png', '.webp', '.mp4', '.mov', '.avi', '.webm', '.apk', '.aab', '.zip'];
+  const ext = path.extname(file.originalname).toLowerCase();
 
   if (allowed.includes(file.mimetype) || allowedExts.includes(ext)) {
     cb(null, true);
@@ -51,25 +41,40 @@ const fileFilter = (req, file, cb) => {
 };
 
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   fileFilter,
-  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB max
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB
 });
 
-// POST /api/upload?type=thumbnail|apk|aab|code
-router.post('/', authenticate, adminOnly, upload.single('file'), (req, res) => {
+// POST /api/upload?type=thumbnail|screenshot|video|apk|aab|code
+router.post('/', authenticate, adminOnly, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
     const type = req.query.type || 'thumbnail';
-    const serverUrl = `${req.protocol}://${req.get('host')}`;
-    const folder = UPLOAD_DIRS[type] || 'uploads/thumbnails';
-    const fileUrl = `${serverUrl}/${folder}/${req.file.filename}`;
+    const resourceType = RESOURCE_TYPES[type] || 'raw';
+
+    const result = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder: `appmarket/${type}`,
+          resource_type: resourceType,
+          use_filename: true,
+          unique_filename: true,
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+      stream.end(req.file.buffer);
+    });
 
     res.json({
-      url: fileUrl,
-      filename: req.file.filename,
-      size: req.file.size,
+      url:          result.secure_url,
+      publicId:     result.public_id,
+      filename:     result.original_filename,
+      size:         result.bytes,
       originalName: req.file.originalname,
     });
   } catch (err) {
