@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const cloudinary = require('cloudinary').v2;
 const { authenticate, adminOnly } = require('../middleware/auth');
+const { uploadToR2 } = require('../services/r2');
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -15,10 +16,10 @@ const RESOURCE_TYPES = {
   thumbnail:  'image',
   screenshot: 'image',
   video:      'video',
-  apk:        'raw',
-  aab:        'raw',
-  code:       'raw',
 };
+
+// Large binaries go to Cloudflare R2 (private bucket) instead of Cloudinary
+const R2_TYPES = new Set(['apk', 'aab', 'code']);
 
 const fileFilter = (req, file, cb) => {
   const allowed = [
@@ -52,7 +53,26 @@ router.post('/', authenticate, adminOnly, upload.single('file'), async (req, res
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
     const type = req.query.type || 'thumbnail';
-    const resourceType = RESOURCE_TYPES[type] || 'raw';
+
+    // APK / AAB / source-code zip → Cloudflare R2 (no 10MB limit, kept private)
+    if (R2_TYPES.has(type)) {
+      const ext = path.extname(req.file.originalname).toLowerCase();
+      const key = `${type}/${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
+      await uploadToR2({
+        buffer: req.file.buffer,
+        key,
+        contentType: req.file.mimetype || 'application/octet-stream',
+      });
+      return res.json({
+        url:          key,   // stored in AppFiles; presigned at download time
+        key,
+        storage:      'r2',
+        size:         req.file.size,
+        originalName: req.file.originalname,
+      });
+    }
+
+    const resourceType = RESOURCE_TYPES[type] || 'image';
 
     const result = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(

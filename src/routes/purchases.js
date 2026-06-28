@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { sql, getPool } = require('../db/config');
 const { authenticate } = require('../middleware/auth');
+const { getPresignedUrl, isR2Key } = require('../services/r2');
 
 // Buy an app (dummy payment — marks as completed instantly)
 router.post('/', authenticate, async (req, res) => {
@@ -92,7 +93,20 @@ router.get('/download/:appId', authenticate, async (req, res) => {
       .input('appId', sql.Int, req.params.appId)
       .query('SELECT apkUrl, aabUrl, codeZipUrl FROM AppMarket.AppFiles WHERE appId = @appId');
 
-    res.json(files.recordset[0] || {});
+    const row = files.recordset[0] || {};
+
+    // R2-stored values are bare object keys → swap them for short-lived signed URLs.
+    // Old Cloudinary values are already full URLs and pass through untouched.
+    const names = { apkUrl: 'app.apk', aabUrl: 'app.aab', codeZipUrl: 'code.zip' };
+    const signed = {};
+    for (const field of Object.keys(names)) {
+      const value = row[field];
+      signed[field] = isR2Key(value)
+        ? await getPresignedUrl(value, { downloadName: names[field] })
+        : value;
+    }
+
+    res.json(signed);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
