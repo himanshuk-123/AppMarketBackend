@@ -11,7 +11,7 @@ router.get('/', async (req, res) => {
 
     let query = `
       SELECT a.id, a.name, a.description, a.category, a.price,
-             a.thumbnail, a.previewUrl, a.version, a.createdAt
+             a.thumbnail, a.previewUrl, a.livePreviewUrl, a.version, a.createdAt
       FROM AppMarket.Apps a
       WHERE a.isActive = @isActive
     `;
@@ -62,7 +62,7 @@ router.get('/:id', async (req, res) => {
 // Create app (admin only)
 router.post('/', authenticate, adminOnly, async (req, res) => {
   try {
-    const { name, description, category, price, thumbnail, previewUrl, version,
+    const { name, description, category, price, thumbnail, previewUrl, livePreviewUrl, version,
             apkUrl, aabUrl, codeZipUrl } = req.body;
 
     const pool = await getPool();
@@ -73,10 +73,11 @@ router.post('/', authenticate, adminOnly, async (req, res) => {
       .input('price', sql.Decimal(10, 2), price)
       .input('thumbnail', sql.NVarChar, thumbnail || null)
       .input('previewUrl', sql.NVarChar, previewUrl || null)
+      .input('livePreviewUrl', sql.NVarChar, livePreviewUrl || null)
       .input('version', sql.NVarChar, version || '1.0.0')
-      .query(`INSERT INTO   AppMarket.Apps (name, description, category, price, thumbnail, previewUrl, version)
+      .query(`INSERT INTO   AppMarket.Apps (name, description, category, price, thumbnail, previewUrl, livePreviewUrl, version)
               OUTPUT INSERTED.*
-              VALUES (@name, @description, @category, @price, @thumbnail, @previewUrl, @version)`);
+              VALUES (@name, @description, @category, @price, @thumbnail, @previewUrl, @livePreviewUrl, @version)`);
 
     const app = appResult.recordset[0];
 
@@ -97,7 +98,7 @@ router.post('/', authenticate, adminOnly, async (req, res) => {
 // Update app (admin only)
 router.put('/:id', authenticate, adminOnly, async (req, res) => {
   try {
-    const { name, description, category, price, thumbnail, previewUrl, version, isActive,
+    const { name, description, category, price, thumbnail, previewUrl, livePreviewUrl, version, isActive,
             apkUrl, aabUrl, codeZipUrl } = req.body;
     const pool = await getPool();
 
@@ -109,10 +110,11 @@ router.put('/:id', authenticate, adminOnly, async (req, res) => {
       .input('price', sql.Decimal(10, 2), price)
       .input('thumbnail', sql.NVarChar, thumbnail || null)
       .input('previewUrl', sql.NVarChar, previewUrl || null)
+      .input('livePreviewUrl', sql.NVarChar, livePreviewUrl || null)
       .input('version', sql.NVarChar, version || '1.0.0')
       .input('isActive', sql.Bit, isActive !== undefined ? isActive : 1)
       .query(`UPDATE AppMarket.Apps SET name=@name, description=@description, category=@category,
-              price=@price, thumbnail=@thumbnail, previewUrl=@previewUrl,
+              price=@price, thumbnail=@thumbnail, previewUrl=@previewUrl, livePreviewUrl=@livePreviewUrl,
               version=@version, isActive=@isActive WHERE id=@id`);
 
     // Upsert AppFiles (insert if not exists, otherwise update)

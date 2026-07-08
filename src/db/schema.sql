@@ -25,6 +25,7 @@ CREATE TABLE Apps (
   price DECIMAL(10,2) NOT NULL,
   thumbnail NVARCHAR(500),
   previewUrl NVARCHAR(500),
+  livePreviewUrl NVARCHAR(500),   -- hosted interactive design preview (Stitch/Netlify)
   version NVARCHAR(20) DEFAULT '1.0.0',
   isActive BIT DEFAULT 1,
   createdAt DATETIME DEFAULT GETDATE()
