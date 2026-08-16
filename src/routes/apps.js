@@ -11,8 +11,13 @@ router.get('/', async (req, res) => {
 
     let query = `
       SELECT a.id, a.name, a.description, a.category, a.price,
-             a.thumbnail, a.previewUrl, a.livePreviewUrl, a.version, a.createdAt
+             a.thumbnail, a.previewUrl, a.livePreviewUrl, a.version, a.createdAt,
+             COALESCE(AVG(CAST(r.rating AS FLOAT)), 0) AS averageRating,
+             COUNT(DISTINCT r.id) AS totalReviews,
+             COUNT(DISTINCT p.id) AS downloadsCount
       FROM AppMarket.Apps a
+      LEFT JOIN AppMarket.Reviews r ON r.appId = a.id
+      LEFT JOIN AppMarket.Purchases p ON p.appId = a.id AND p.status = 'completed'
       WHERE a.isActive = @isActive
     `;
 
@@ -24,6 +29,7 @@ router.get('/', async (req, res) => {
       request.input('category', sql.NVarChar, category);
       query += ` AND a.category = @category`;
     }
+    query += ` GROUP BY a.id, a.name, a.description, a.category, a.price, a.thumbnail, a.previewUrl, a.livePreviewUrl, a.version, a.createdAt`;
     query += ` ORDER BY a.createdAt DESC`;
 
     const result = await request.query(query);
@@ -33,16 +39,22 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get single app with screenshots
+// Get single app with screenshots and reviews
 router.get('/:id', async (req, res) => {
   try {
     const pool = await getPool();
     const appResult = await pool.request()
       .input('id', sql.Int, req.params.id)
-      .query(`SELECT a.*, af.apkUrl, af.aabUrl, af.codeZipUrl
+      .query(`SELECT a.*, af.apkUrl, af.aabUrl, af.codeZipUrl,
+                     COALESCE(AVG(CAST(r.rating AS FLOAT)), 0) AS averageRating,
+                     COUNT(DISTINCT r.id) AS totalReviews,
+                     COUNT(DISTINCT p.id) AS downloadsCount
               FROM AppMarket.Apps a
               LEFT JOIN AppMarket.AppFiles af ON af.appId = a.id
-              WHERE a.id = @id AND a.isActive = 1`);
+              LEFT JOIN AppMarket.Reviews r ON r.appId = a.id
+              LEFT JOIN AppMarket.Purchases p ON p.appId = a.id AND p.status = 'completed'
+              WHERE a.id = @id AND a.isActive = 1
+              GROUP BY a.id, a.name, a.description, a.category, a.price, a.thumbnail, a.previewUrl, a.livePreviewUrl, a.version, a.isActive, a.createdAt, af.apkUrl, af.aabUrl, af.codeZipUrl`);
 
     if (!appResult.recordset[0])
       return res.status(404).json({ message: 'App not found' });
@@ -51,9 +63,50 @@ router.get('/:id', async (req, res) => {
       .input('appId', sql.Int, req.params.id)
       .query('SELECT imageUrl FROM AppMarket.Screenshots WHERE appId = @appId ORDER BY sortOrder');
 
+    const reviewsResult = await pool.request()
+      .input('appId', sql.Int, req.params.id)
+      .query(`SELECT r.id, r.rating, r.comment, r.createdAt, u.name AS userName
+              FROM AppMarket.Reviews r
+              JOIN AppMarket.Users u ON u.id = r.userId
+              WHERE r.appId = @appId
+              ORDER BY r.createdAt DESC`);
+
     const app = appResult.recordset[0];
     app.screenshots = screenshotsResult.recordset;
+    app.reviews = reviewsResult.recordset;
     res.json({ app });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Submit a review for an app (authenticated users)
+router.post('/:id/reviews', authenticate, async (req, res) => {
+  try {
+    const { rating, comment } = req.body;
+    const appId = req.params.id;
+    const userId = req.user.id;
+
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ message: 'Rating must be between 1 and 5' });
+    }
+
+    const pool = await getPool();
+
+    // Upsert review (user can update their existing review)
+    await pool.request()
+      .input('appId', sql.Int, appId)
+      .input('userId', sql.Int, userId)
+      .input('rating', sql.Int, rating)
+      .input('comment', sql.NVarChar, comment || '')
+      .query(`IF EXISTS (SELECT 1 FROM AppMarket.Reviews WHERE appId = @appId AND userId = @userId)
+                UPDATE AppMarket.Reviews SET rating = @rating, comment = @comment, createdAt = GETDATE()
+                WHERE appId = @appId AND userId = @userId
+              ELSE
+                INSERT INTO AppMarket.Reviews (appId, userId, rating, comment)
+                VALUES (@appId, @userId, @rating, @comment)`);
+
+    res.status(201).json({ message: 'Review submitted successfully' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

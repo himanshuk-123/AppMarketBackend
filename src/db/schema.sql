@@ -58,6 +58,16 @@ CREATE TABLE Purchases (
   status NVARCHAR(20) DEFAULT 'completed',
   purchasedAt DATETIME DEFAULT GETDATE()
 );
+
+-- Reviews & Ratings
+CREATE TABLE Reviews (
+  id INT IDENTITY(1,1) PRIMARY KEY,
+  appId INT NOT NULL FOREIGN KEY REFERENCES Apps(id) ON DELETE CASCADE,
+  userId INT NOT NULL FOREIGN KEY REFERENCES Users(id),
+  rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  comment NVARCHAR(MAX),
+  createdAt DATETIME DEFAULT GETDATE()
+);
 GO
 
 -- Seed admin user (password: admin123)
