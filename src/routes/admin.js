@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { sql, getPool } = require('../db/config');
 const { authenticate, adminOnly } = require('../middleware/auth');
-
+const { SCHEMA_NAME } = require('../constants');
 router.use(authenticate, adminOnly);
 
 // Dashboard stats
@@ -10,10 +10,10 @@ router.get('/stats', async (req, res) => {
     const pool = await getPool();
     const result = await pool.request().query(`
       SELECT
-        (SELECT COUNT(*) FROM AppMarket.Apps WHERE isActive = 1) AS apps,
-        (SELECT COUNT(*) FROM AppMarket.Purchases WHERE status = 'completed') AS orders,
-        (SELECT COUNT(*) FROM AppMarket.Users WHERE role = 'user') AS users,
-        (SELECT ISNULL(SUM(amount), 0) FROM AppMarket.Purchases WHERE status = 'completed') AS revenue
+        (SELECT COUNT(*) FROM ${SCHEMA_NAME}.Apps WHERE isActive = 1) AS apps,
+        (SELECT COUNT(*) FROM ${SCHEMA_NAME}.Purchases WHERE status = 'completed') AS orders,
+        (SELECT COUNT(*) FROM ${SCHEMA_NAME}.Users WHERE role = 'user') AS users,
+        (SELECT ISNULL(SUM(amount), 0) FROM ${SCHEMA_NAME}.Purchases WHERE status = 'completed') AS revenue
     `);
     res.json(result.recordset[0]);
   } catch (err) {
@@ -27,9 +27,9 @@ router.get('/orders', async (req, res) => {
     const pool = await getPool();
     const result = await pool.request().query(`
       SELECT p.*, a.name as [app.name], u.name as [user.name], u.email as [user.email]
-      FROM AppMarket.Purchases p
-      JOIN AppMarket.Apps a ON a.id = p.appId
-      JOIN AppMarket.Users u ON u.id = p.userId
+      FROM ${SCHEMA_NAME}.Purchases p
+      JOIN ${SCHEMA_NAME}.Apps a ON a.id = p.appId
+      JOIN ${SCHEMA_NAME}.Users u ON u.id = p.userId
       ORDER BY p.purchasedAt DESC
     `);
     const orders = result.recordset.map((row) => ({
@@ -52,8 +52,8 @@ router.get('/users', async (req, res) => {
     const pool = await getPool();
     const result = await pool.request().query(`
       SELECT u.id, u.name, u.email, u.createdAt,
-             (SELECT COUNT(*) FROM AppMarket.Purchases p WHERE p.userId = u.id AND p.status = 'completed') AS purchaseCount
-      FROM AppMarket.Users u
+             (SELECT COUNT(*) FROM ${SCHEMA_NAME}.Purchases p WHERE p.userId = u.id AND p.status = 'completed') AS purchaseCount
+      FROM ${SCHEMA_NAME}.Users u
       WHERE u.role = 'user'
       ORDER BY u.createdAt DESC
     `);

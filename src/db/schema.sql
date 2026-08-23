@@ -73,5 +73,5 @@ GO
 -- Seed admin user (password: admin123)
 -- bcrypt hash of 'admin123' with 10 rounds
 INSERT INTO Users (name, email, password, role)
-VALUES ('Admin', 'admin@appmarket.com', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lHHi', 'admin');
+VALUES ('Admin', 'admin@AppMarket.com', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lHHi', 'admin');
 GO

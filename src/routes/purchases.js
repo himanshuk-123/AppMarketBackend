@@ -2,7 +2,7 @@ const router = require('express').Router();
 const { sql, getPool } = require('../db/config');
 const { authenticate } = require('../middleware/auth');
 const { getPresignedUrl, isR2Key } = require('../services/r2');
-
+const {SCHEMA_NAME} = require('../constants')
 // Buy an app (dummy payment — marks as completed instantly)
 router.post('/', authenticate, async (req, res) => {
   try {
@@ -13,7 +13,7 @@ router.post('/', authenticate, async (req, res) => {
     const existing = await pool.request()
       .input('userId', sql.Int, req.user.id)
       .input('appId', sql.Int, appId)
-      .query(`SELECT id FROM AppMarket.Purchases WHERE userId=@userId AND appId=@appId AND status='completed'`);
+      .query(`SELECT id FROM ${SCHEMA_NAME}.Purchases WHERE userId=@userId AND appId=@appId AND status='completed'`);
 
     if (existing.recordset.length)
       return res.status(409).json({ message: 'You already own this app' });
@@ -21,7 +21,7 @@ router.post('/', authenticate, async (req, res) => {
     // Get app price
     const appResult = await pool.request()
       .input('appId', sql.Int, appId)
-      .query('SELECT price FROM AppMarket.Apps WHERE id = @appId AND isActive = 1');
+      .query(`SELECT price FROM ${SCHEMA_NAME}.Apps WHERE id = @appId AND isActive = 1`);
 
     if (!appResult.recordset[0])
       return res.status(404).json({ message: 'App not found' });
@@ -33,7 +33,7 @@ router.post('/', authenticate, async (req, res) => {
       .input('appId', sql.Int, appId)
       .input('amount', sql.Decimal(10, 2), price)
       .input('paymentId', sql.NVarChar, `DUMMY_${Date.now()}`)
-      .query(`INSERT INTO AppMarket.Purchases (userId, appId, amount, paymentId, status)
+      .query(`INSERT INTO ${SCHEMA_NAME}.Purchases (userId, appId, amount, paymentId, status)
               OUTPUT INSERTED.*
               VALUES (@userId, @appId, @amount, @paymentId, 'completed')`);
 
@@ -51,8 +51,8 @@ router.get('/my', authenticate, async (req, res) => {
       .input('userId', sql.Int, req.user.id)
       .query(`SELECT p.*, a.name as [app.name], a.thumbnail as [app.thumbnail],
               a.category as [app.category]
-              FROM AppMarket.Purchases p
-              JOIN AppMarket.Apps a ON a.id = p.appId
+              FROM ${SCHEMA_NAME}.Purchases p
+              JOIN ${SCHEMA_NAME}.Apps a ON a.id = p.appId
               WHERE p.userId = @userId AND p.status = 'completed'
               ORDER BY p.purchasedAt DESC`);
 
@@ -84,14 +84,14 @@ router.get('/download/:appId', authenticate, async (req, res) => {
     const purchased = await pool.request()
       .input('userId', sql.Int, req.user.id)
       .input('appId', sql.Int, req.params.appId)
-      .query(`SELECT id FROM AppMarket.Purchases WHERE userId=@userId AND appId=@appId AND status='completed'`);
+      .query(`SELECT id FROM ${SCHEMA_NAME}.Purchases WHERE userId=@userId AND appId=@appId AND status='completed'`);
 
     if (!purchased.recordset.length)
       return res.status(403).json({ message: 'Purchase this app to download' });
 
     const files = await pool.request()
       .input('appId', sql.Int, req.params.appId)
-      .query('SELECT apkUrl, aabUrl, codeZipUrl FROM AppMarket.AppFiles WHERE appId = @appId');
+      .query(`SELECT apkUrl, aabUrl, codeZipUrl FROM ${SCHEMA_NAME}.AppFiles WHERE appId = @appId`);
 
     const row = files.recordset[0] || {};
 

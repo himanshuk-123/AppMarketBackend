@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { sql, getPool } = require('../db/config');
 const { authenticate, adminOnly } = require('../middleware/auth');
-
+const { SCHEMA_NAME } = require('../constants');
 // Get all apps (public)
 router.get('/', async (req, res) => {
   try {
@@ -15,9 +15,9 @@ router.get('/', async (req, res) => {
              COALESCE(AVG(CAST(r.rating AS FLOAT)), 0) AS averageRating,
              COUNT(DISTINCT r.id) AS totalReviews,
              COUNT(DISTINCT p.id) AS downloadsCount
-      FROM AppMarket.Apps a
-      LEFT JOIN AppMarket.Reviews r ON r.appId = a.id
-      LEFT JOIN AppMarket.Purchases p ON p.appId = a.id AND p.status = 'completed'
+      FROM ${SCHEMA_NAME}.Apps a
+      LEFT JOIN ${SCHEMA_NAME}.Reviews r ON r.appId = a.id
+      LEFT JOIN ${SCHEMA_NAME}.Purchases p ON p.appId = a.id AND p.status = 'completed'
       WHERE a.isActive = @isActive
     `;
 
@@ -49,10 +49,10 @@ router.get('/:id', async (req, res) => {
                      COALESCE(AVG(CAST(r.rating AS FLOAT)), 0) AS averageRating,
                      COUNT(DISTINCT r.id) AS totalReviews,
                      COUNT(DISTINCT p.id) AS downloadsCount
-              FROM AppMarket.Apps a
-              LEFT JOIN AppMarket.AppFiles af ON af.appId = a.id
-              LEFT JOIN AppMarket.Reviews r ON r.appId = a.id
-              LEFT JOIN AppMarket.Purchases p ON p.appId = a.id AND p.status = 'completed'
+              FROM ${SCHEMA_NAME}.Apps a
+              LEFT JOIN ${SCHEMA_NAME}.AppFiles af ON af.appId = a.id
+              LEFT JOIN ${SCHEMA_NAME}.Reviews r ON r.appId = a.id
+              LEFT JOIN ${SCHEMA_NAME}.Purchases p ON p.appId = a.id AND p.status = 'completed'
               WHERE a.id = @id AND a.isActive = 1
               GROUP BY a.id, a.name, a.description, a.category, a.price, a.thumbnail, a.previewUrl, a.livePreviewUrl, a.version, a.isActive, a.createdAt, af.apkUrl, af.aabUrl, af.codeZipUrl`);
 
@@ -61,12 +61,12 @@ router.get('/:id', async (req, res) => {
 
     const screenshotsResult = await pool.request()
       .input('appId', sql.Int, req.params.id)
-      .query('SELECT imageUrl FROM AppMarket.Screenshots WHERE appId = @appId ORDER BY sortOrder');
+      .query(`SELECT imageUrl FROM ${SCHEMA_NAME}.Screenshots WHERE appId = @appId ORDER BY sortOrder`);
 
     const reviewsResult = await pool.request()
       .input('appId', sql.Int, req.params.id)
       .query(`SELECT r.id, r.rating, r.comment, r.createdAt, u.name AS userName
-              FROM AppMarket.Reviews r
+              FROM ${SCHEMA_NAME}.Reviews r
               JOIN AppMarket.Users u ON u.id = r.userId
               WHERE r.appId = @appId
               ORDER BY r.createdAt DESC`);
@@ -99,11 +99,11 @@ router.post('/:id/reviews', authenticate, async (req, res) => {
       .input('userId', sql.Int, userId)
       .input('rating', sql.Int, rating)
       .input('comment', sql.NVarChar, comment || '')
-      .query(`IF EXISTS (SELECT 1 FROM AppMarket.Reviews WHERE appId = @appId AND userId = @userId)
-                UPDATE AppMarket.Reviews SET rating = @rating, comment = @comment, createdAt = GETDATE()
+      .query(`IF EXISTS (SELECT 1 FROM ${SCHEMA_NAME}.Reviews WHERE appId = @appId AND userId = @userId)
+                UPDATE ${SCHEMA_NAME}.Reviews SET rating = @rating, comment = @comment, createdAt = GETDATE()
                 WHERE appId = @appId AND userId = @userId
               ELSE
-                INSERT INTO AppMarket.Reviews (appId, userId, rating, comment)
+                INSERT INTO ${SCHEMA_NAME}.Reviews (appId, userId, rating, comment)
                 VALUES (@appId, @userId, @rating, @comment)`);
 
     res.status(201).json({ message: 'Review submitted successfully' });
@@ -128,7 +128,7 @@ router.post('/', authenticate, adminOnly, async (req, res) => {
       .input('previewUrl', sql.NVarChar, previewUrl || null)
       .input('livePreviewUrl', sql.NVarChar, livePreviewUrl || null)
       .input('version', sql.NVarChar, version || '1.0.0')
-      .query(`INSERT INTO   AppMarket.Apps (name, description, category, price, thumbnail, previewUrl, livePreviewUrl, version)
+      .query(`INSERT INTO ${SCHEMA_NAME}.Apps (name, description, category, price, thumbnail, previewUrl, livePreviewUrl, version)
               OUTPUT INSERTED.*
               VALUES (@name, @description, @category, @price, @thumbnail, @previewUrl, @livePreviewUrl, @version)`);
 
@@ -139,7 +139,7 @@ router.post('/', authenticate, adminOnly, async (req, res) => {
       .input('apkUrl', sql.NVarChar, apkUrl || null)
       .input('aabUrl', sql.NVarChar, aabUrl || null)
       .input('codeZipUrl', sql.NVarChar, codeZipUrl || null)
-      .query(`INSERT INTO AppMarket.AppFiles (appId, apkUrl, aabUrl, codeZipUrl)
+      .query(`INSERT INTO ${SCHEMA_NAME}.AppFiles (appId, apkUrl, aabUrl, codeZipUrl)
               VALUES (@appId, @apkUrl, @aabUrl, @codeZipUrl)`);
 
     res.status(201).json({ app });
@@ -166,7 +166,7 @@ router.put('/:id', authenticate, adminOnly, async (req, res) => {
       .input('livePreviewUrl', sql.NVarChar, livePreviewUrl || null)
       .input('version', sql.NVarChar, version || '1.0.0')
       .input('isActive', sql.Bit, isActive !== undefined ? isActive : 1)
-      .query(`UPDATE AppMarket.Apps SET name=@name, description=@description, category=@category,
+      .query(`UPDATE ${SCHEMA_NAME}.Apps SET name=@name, description=@description, category=@category,
               price=@price, thumbnail=@thumbnail, previewUrl=@previewUrl, livePreviewUrl=@livePreviewUrl,
               version=@version, isActive=@isActive WHERE id=@id`);
 
@@ -176,10 +176,10 @@ router.put('/:id', authenticate, adminOnly, async (req, res) => {
       .input('apkUrl', sql.NVarChar, apkUrl || null)
       .input('aabUrl', sql.NVarChar, aabUrl || null)
       .input('codeZipUrl', sql.NVarChar, codeZipUrl || null)
-      .query(`IF EXISTS (SELECT 1 FROM AppMarket.AppFiles WHERE appId = @appId)
-                UPDATE AppMarket.AppFiles SET apkUrl=@apkUrl, aabUrl=@aabUrl, codeZipUrl=@codeZipUrl WHERE appId=@appId
+      .query(`IF EXISTS (SELECT 1 FROM ${SCHEMA_NAME}.AppFiles WHERE appId = @appId)
+                UPDATE ${SCHEMA_NAME}.AppFiles SET apkUrl=@apkUrl, aabUrl=@aabUrl, codeZipUrl=@codeZipUrl WHERE appId=@appId
               ELSE
-                INSERT INTO AppMarket.AppFiles (appId, apkUrl, aabUrl, codeZipUrl) VALUES (@appId, @apkUrl, @aabUrl, @codeZipUrl)`);
+                INSERT INTO ${SCHEMA_NAME}.AppFiles (appId, apkUrl, aabUrl, codeZipUrl) VALUES (@appId, @apkUrl, @aabUrl, @codeZipUrl)`);
 
     res.json({ message: 'App updated' });
   } catch (err) {
@@ -196,7 +196,7 @@ router.post('/:id/screenshots', authenticate, adminOnly, async (req, res) => {
       .input('appId', sql.Int, req.params.id)
       .input('imageUrl', sql.NVarChar, imageUrl)
       .input('sortOrder', sql.Int, sortOrder || 0)
-      .query(`INSERT INTO AppMarket.Screenshots (appId, imageUrl, sortOrder)
+      .query(`INSERT INTO ${SCHEMA_NAME}.Screenshots (appId, imageUrl, sortOrder)
               OUTPUT INSERTED.*
               VALUES (@appId, @imageUrl, @sortOrder)`);
     res.status(201).json({ screenshot: result.recordset[0] });
@@ -212,7 +212,7 @@ router.delete('/:id/screenshots/:screenshotId', authenticate, adminOnly, async (
     await pool.request()
       .input('id', sql.Int, req.params.screenshotId)
       .input('appId', sql.Int, req.params.id)
-      .query('DELETE FROM AppMarket.Screenshots WHERE id = @id AND appId = @appId');
+      .query(`DELETE FROM ${SCHEMA_NAME}.Screenshots WHERE id = @id AND appId = @appId`);
     res.json({ message: 'Screenshot deleted' });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -225,7 +225,7 @@ router.delete('/:id', authenticate, adminOnly, async (req, res) => {
     const pool = await getPool();
     await pool.request()
       .input('id', sql.Int, req.params.id)
-      .query('UPDATE AppMarket.Apps SET isActive = 0 WHERE id = @id');
+      .query(`UPDATE ${SCHEMA_NAME}.Apps SET isActive = 0 WHERE id = @id`);
     res.json({ message: 'App removed from marketplace' });
   } catch (err) {
     res.status(500).json({ message: err.message });

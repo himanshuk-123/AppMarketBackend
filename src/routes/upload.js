@@ -4,7 +4,7 @@ const path = require('path');
 const cloudinary = require('cloudinary').v2;
 const { authenticate, adminOnly } = require('../middleware/auth');
 const { uploadToR2 } = require('../services/r2');
-
+const {SCHEMA_NAME} = require('../constants')
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key:    process.env.CLOUDINARY_API_KEY,
@@ -77,7 +77,7 @@ router.post('/', authenticate, adminOnly, upload.single('file'), async (req, res
     const result = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         {
-          folder: `appmarket/${type}`,
+          folder: `${SCHEMA_NAME}/${type}`,
           resource_type: resourceType,
           use_filename: true,
           unique_filename: true,
