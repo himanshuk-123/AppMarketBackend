@@ -22,6 +22,10 @@ const getRazorpay = () => {
 // Rupees (DECIMAL from SQL) → paise (integer Razorpay expects)
 const toPaise = (amount) => Math.round(Number(amount) * 100);
 
+// Errors from our own checks (bad signature, wrong amount, unpaid) — as opposed
+// to network / Razorpay API errors, where the payment may still be fine.
+const verificationError = (message) => Object.assign(new Error(message), { verification: true });
+
 const safeEqual = (a, b) => {
   const bufA = Buffer.from(String(a || ''), 'utf8');
   const bufB = Buffer.from(String(b || ''), 'utf8');
@@ -50,13 +54,13 @@ const verifyWebhookSignature = (rawBody, signature) => {
 // Make sure the money is actually ours: capture an authorized payment so it
 // isn't auto-refunded, and reject anything that doesn't match the order.
 const ensureCaptured = async (payment, { orderId, amount }) => {
-  if (payment.order_id !== orderId) throw new Error('Payment does not belong to this order');
-  if (Number(payment.amount) !== Number(amount)) throw new Error('Payment amount mismatch');
+  if (payment.order_id !== orderId) throw verificationError('Payment does not belong to this order');
+  if (Number(payment.amount) !== Number(amount)) throw verificationError('Payment amount mismatch');
   if (payment.status === 'captured') return payment;
   if (payment.status === 'authorized') {
     return getRazorpay().payments.capture(payment.id, payment.amount, payment.currency);
   }
-  throw new Error(`Payment not successful (status: ${payment.status})`);
+  throw verificationError(`Payment not successful (status: ${payment.status})`);
 };
 
 // Idempotent: flips a pending purchase to completed. Called from both the
@@ -78,6 +82,28 @@ const markPurchaseCompleted = async ({ orderId, paymentId }) => {
   return existing.recordset[0] || null;
 };
 
+// Full verification used by both the in-app verify call and the redirect
+// callback: signature → known order (optionally owned by userId) → captured
+// payment with the right amount → purchase completed.
+const verifyAndCompletePayment = async ({ orderId, paymentId, signature, userId }) => {
+  if (!orderId || !paymentId || !signature) throw verificationError('Missing payment details');
+  if (!verifyPaymentSignature({ orderId, paymentId, signature })) throw verificationError('Payment verification failed');
+
+  const pool = await getPool();
+  const request = pool.request().input('orderId', sql.NVarChar, orderId);
+  let query = `SELECT id, amount FROM ${SCHEMA_NAME}.Purchases WHERE orderId = @orderId`;
+  if (userId) {
+    request.input('userId', sql.Int, userId);
+    query += ' AND userId = @userId';
+  }
+  const pending = await request.query(query);
+  if (!pending.recordset[0]) throw verificationError('Order not found');
+
+  const payment = await getRazorpay().payments.fetch(paymentId);
+  await ensureCaptured(payment, { orderId, amount: toPaise(pending.recordset[0].amount) });
+  return markPurchaseCompleted({ orderId, paymentId });
+};
+
 const markPurchaseFailed = async ({ orderId, paymentId }) => {
   const pool = await getPool();
   await pool.request()
@@ -97,4 +123,5 @@ module.exports = {
   ensureCaptured,
   markPurchaseCompleted,
   markPurchaseFailed,
+  verifyAndCompletePayment,
 };

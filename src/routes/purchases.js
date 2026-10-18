@@ -4,7 +4,7 @@ const { authenticate } = require('../middleware/auth');
 const { getPresignedUrl, isR2Key } = require('../services/r2');
 const {SCHEMA_NAME} = require('../constants')
 const {
-  CURRENCY, getRazorpay, toPaise, verifyPaymentSignature, ensureCaptured, markPurchaseCompleted,
+  CURRENCY, getRazorpay, toPaise, verifyAndCompletePayment,
 } = require('../services/razorpay');
 
 // Start a purchase. Free apps are granted immediately; paid apps get a
@@ -78,31 +78,12 @@ router.post('/order', authenticate, async (req, res) => {
 // Verify the checkout result and complete the purchase
 router.post('/verify', authenticate, async (req, res) => {
   try {
-    const {
-      razorpay_order_id: orderId,
-      razorpay_payment_id: paymentId,
-      razorpay_signature: signature,
-    } = req.body;
-
-    if (!orderId || !paymentId || !signature)
-      return res.status(400).json({ message: 'Missing payment details' });
-
-    if (!verifyPaymentSignature({ orderId, paymentId, signature }))
-      return res.status(400).json({ message: 'Payment verification failed' });
-
-    const pool = await getPool();
-    const pending = await pool.request()
-      .input('orderId', sql.NVarChar, orderId)
-      .input('userId', sql.Int, req.user.id)
-      .query(`SELECT id, amount FROM ${SCHEMA_NAME}.Purchases WHERE orderId = @orderId AND userId = @userId`);
-
-    if (!pending.recordset[0])
-      return res.status(404).json({ message: 'Order not found' });
-
-    const payment = await getRazorpay().payments.fetch(paymentId);
-    await ensureCaptured(payment, { orderId, amount: toPaise(pending.recordset[0].amount) });
-
-    const purchase = await markPurchaseCompleted({ orderId, paymentId });
+    const purchase = await verifyAndCompletePayment({
+      orderId: req.body.razorpay_order_id,
+      paymentId: req.body.razorpay_payment_id,
+      signature: req.body.razorpay_signature,
+      userId: req.user.id,
+    });
     res.json({ purchase });
   } catch (err) {
     res.status(400).json({ message: err.message || err.error?.description || 'Payment verification failed' });

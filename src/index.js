@@ -9,6 +9,7 @@ const purchaseRoutes = require('./routes/purchases');
 const adminRoutes = require('./routes/admin');
 const uploadRoutes = require('./routes/upload');
 const webhookRoutes = require('./routes/webhook');
+const paymentCallbackRoutes = require('./routes/paymentCallback');
 
 const app = express();
 
@@ -16,6 +17,8 @@ app.use(cors());
 // Webhook needs the raw body for signature verification, so it goes before express.json()
 app.use('/api/payments/webhook', express.raw({ type: '*/*' }), webhookRoutes);
 app.use(express.json());
+// Razorpay redirect callback posts form-encoded fields like error[description]
+app.use('/api/payments', express.urlencoded({ extended: true }), paymentCallbackRoutes);
 
 // Serve uploaded files as static assets
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
