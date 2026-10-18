@@ -55,7 +55,8 @@ CREATE TABLE Purchases (
   appId INT NOT NULL FOREIGN KEY REFERENCES Apps(id),
   amount DECIMAL(10,2) NOT NULL,
   paymentId NVARCHAR(200),
-  status NVARCHAR(20) DEFAULT 'completed',
+  orderId NVARCHAR(100),          -- Razorpay order id (paid purchases)
+  status NVARCHAR(20) DEFAULT 'pending',   -- 'pending' | 'completed' | 'failed'
   purchasedAt DATETIME DEFAULT GETDATE()
 );
 

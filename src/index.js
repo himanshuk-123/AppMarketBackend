@@ -8,10 +8,13 @@ const appRoutes = require('./routes/apps');
 const purchaseRoutes = require('./routes/purchases');
 const adminRoutes = require('./routes/admin');
 const uploadRoutes = require('./routes/upload');
+const webhookRoutes = require('./routes/webhook');
 
 const app = express();
 
 app.use(cors());
+// Webhook needs the raw body for signature verification, so it goes before express.json()
+app.use('/api/payments/webhook', express.raw({ type: '*/*' }), webhookRoutes);
 app.use(express.json());
 
 // Serve uploaded files as static assets
