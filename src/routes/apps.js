@@ -1,7 +1,8 @@
 const router = require('express').Router();
 const { sql, getPool } = require('../db/config');
-const { authenticate, adminOnly } = require('../middleware/auth');
+const { authenticate, optionalAuth, adminOnly, isAdmin, requireVerified } = require('../middleware/auth');
 const { SCHEMA_NAME } = require('../constants');
+const { serverError } = require('../utils/serverError');
 // Get all apps (public)
 router.get('/', async (req, res) => {
   try {
@@ -35,12 +36,14 @@ router.get('/', async (req, res) => {
     const result = await request.query(query);
     res.json({ apps: result.recordset });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    serverError(res, err);
   }
 });
 
 // Get single app with screenshots and reviews
-router.get('/:id', async (req, res) => {
+// Download links (APK / AAB / code) are only included for admins; buyers get
+// them from GET /api/purchases/download/:appId after purchase.
+router.get('/:id', optionalAuth, async (req, res) => {
   try {
     const pool = await getPool();
     const appResult = await pool.request()
@@ -67,21 +70,26 @@ router.get('/:id', async (req, res) => {
       .input('appId', sql.Int, req.params.id)
       .query(`SELECT r.id, r.rating, r.comment, r.createdAt, u.name AS userName
               FROM ${SCHEMA_NAME}.Reviews r
-              JOIN AppMarket.Users u ON u.id = r.userId
+              JOIN ${SCHEMA_NAME}.Users u ON u.id = r.userId
               WHERE r.appId = @appId
               ORDER BY r.createdAt DESC`);
 
     const app = appResult.recordset[0];
+    if (!isAdmin(req.user)) {
+      delete app.apkUrl;
+      delete app.aabUrl;
+      delete app.codeZipUrl;
+    }
     app.screenshots = screenshotsResult.recordset;
     app.reviews = reviewsResult.recordset;
     res.json({ app });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    serverError(res, err);
   }
 });
 
 // Submit a review for an app (authenticated users)
-router.post('/:id/reviews', authenticate, async (req, res) => {
+router.post('/:id/reviews', authenticate, requireVerified, async (req, res) => {
   try {
     const { rating, comment } = req.body;
     const appId = req.params.id;
@@ -108,7 +116,7 @@ router.post('/:id/reviews', authenticate, async (req, res) => {
 
     res.status(201).json({ message: 'Review submitted successfully' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -144,7 +152,7 @@ router.post('/', authenticate, adminOnly, async (req, res) => {
 
     res.status(201).json({ app });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -183,7 +191,7 @@ router.put('/:id', authenticate, adminOnly, async (req, res) => {
 
     res.json({ message: 'App updated' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -201,7 +209,7 @@ router.post('/:id/screenshots', authenticate, adminOnly, async (req, res) => {
               VALUES (@appId, @imageUrl, @sortOrder)`);
     res.status(201).json({ screenshot: result.recordset[0] });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -215,7 +223,7 @@ router.delete('/:id/screenshots/:screenshotId', authenticate, adminOnly, async (
       .query(`DELETE FROM ${SCHEMA_NAME}.Screenshots WHERE id = @id AND appId = @appId`);
     res.json({ message: 'Screenshot deleted' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -228,7 +236,7 @@ router.delete('/:id', authenticate, adminOnly, async (req, res) => {
       .query(`UPDATE ${SCHEMA_NAME}.Apps SET isActive = 0 WHERE id = @id`);
     res.json({ message: 'App removed from marketplace' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    serverError(res, err);
   }
 });
 

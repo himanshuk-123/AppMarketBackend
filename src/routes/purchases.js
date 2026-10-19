@@ -1,8 +1,9 @@
 const router = require('express').Router();
 const { sql, getPool } = require('../db/config');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requireVerified } = require('../middleware/auth');
 const { getPresignedUrl, isR2Key } = require('../services/r2');
 const {SCHEMA_NAME} = require('../constants')
+const { serverError } = require('../utils/serverError');
 const {
   CURRENCY, getRazorpay, toPaise, verifyAndCompletePayment,
 } = require('../services/razorpay');
@@ -10,7 +11,7 @@ const {
 // Start a purchase. Free apps are granted immediately; paid apps get a
 // Razorpay order and a 'pending' purchase that is completed only after the
 // payment is verified (POST /verify or the webhook).
-router.post('/order', authenticate, async (req, res) => {
+router.post('/order', authenticate, requireVerified, async (req, res) => {
   try {
     const appId = parseInt(req.body.appId);
     if (!appId) return res.status(400).json({ message: 'appId is required' });
@@ -71,7 +72,7 @@ router.post('/order', authenticate, async (req, res) => {
       user: { email: req.user.email },
     });
   } catch (err) {
-    res.status(500).json({ message: err.message || err.error?.description || 'Could not create order' });
+    serverError(res, err, 'Could not start the payment. Please try again.');
   }
 });
 
@@ -86,7 +87,8 @@ router.post('/verify', authenticate, async (req, res) => {
     });
     res.json({ purchase });
   } catch (err) {
-    res.status(400).json({ message: err.message || err.error?.description || 'Payment verification failed' });
+    if (err.verification) return res.status(400).json({ message: err.message });
+    serverError(res, err, 'Could not confirm the payment yet. If money was deducted, the app will appear in My Apps shortly.');
   }
 });
 
@@ -119,7 +121,7 @@ router.get('/my', authenticate, async (req, res) => {
 
     res.json({ purchases });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -155,7 +157,7 @@ router.get('/download/:appId', authenticate, async (req, res) => {
 
     res.json(signed);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    serverError(res, err);
   }
 });
 

@@ -5,6 +5,7 @@ const cloudinary = require('cloudinary').v2;
 const { authenticate, adminOnly } = require('../middleware/auth');
 const { uploadToR2 } = require('../services/r2');
 const {SCHEMA_NAME} = require('../constants')
+const { serverError } = require('../utils/serverError');
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key:    process.env.CLOUDINARY_API_KEY,
@@ -98,7 +99,7 @@ router.post('/', authenticate, adminOnly, upload.single('file'), async (req, res
       originalName: req.file.originalname,
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    serverError(res, err);
   }
 });
 

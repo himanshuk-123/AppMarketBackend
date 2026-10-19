@@ -71,8 +71,5 @@ CREATE TABLE Reviews (
 );
 GO
 
--- Seed admin user (password: admin123)
--- bcrypt hash of 'admin123' with 10 rounds
-INSERT INTO Users (name, email, password, role)
-VALUES ('Admin', 'admin@AppMarket.com', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lHHi', 'admin');
-GO
+-- No default admin is seeded (a known password would be a backdoor).
+-- Create one with:  npm run create-admin -- "Your Name" you@example.com "a-strong-password"
